@@ -15,7 +15,7 @@ setup(
     description="A simple GUI tool to install .deb and .rpm packages on Linux",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/Srijan-XI/Linux-pi",
+    url="https://github.com/Srijan-XI/SnapWiz.git",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 4 - Beta",
