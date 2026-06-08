@@ -11,7 +11,7 @@ setup(
     name="linux-package-installer",
     version="1.0.0",
     author="Srijan-XI",
-    author_email="[EMAIL_ADDRESS]",
+    author_email="shreejansamsung@gmail.com",
     description="A simple GUI tool to install .deb and .rpm packages on Linux",
     long_description=long_description,
     long_description_content_type="text/markdown",

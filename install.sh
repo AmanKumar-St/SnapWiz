@@ -21,28 +21,49 @@ fi
 
 echo "✓ Python 3 found: $(python3 --version)"
 
-# Check if python3-venv is installed
-if ! python3 -m venv --help &> /dev/null; then
-    echo "⚠ Warning: python3-venv is not installed."
-    echo "Installing python3-venv..."
-    
-    # Try to install venv based on distribution
-    if command -v apt &> /dev/null; then
-        sudo apt update && sudo apt install -y python3-venv
-    elif command -v dnf &> /dev/null; then
-        sudo dnf install -y python3-venv
-    elif command -v yum &> /dev/null; then
-        sudo yum install -y python3-venv
-    elif command -v pacman &> /dev/null; then
-        sudo pacman -S python-virtualenv
-    else
-        echo "Error: Could not install python3-venv automatically."
-        echo "Please install it manually for your distribution."
-        exit 1
-    fi
-fi
+# Check if the stdlib venv module is available. If not, try to install a suitable package
+# or fall back to installing virtualenv via pip. This handles Fedora (dnf) and other distros.
+echo "Checking for Python venv support..."
+if ! python3 -c "import venv" &> /dev/null; then
+    echo "⚠ Warning: Python 'venv' module is not available. Attempting to install system packages..."
 
-echo "✓ python3-venv available"
+    if command -v apt &> /dev/null; then
+        sudo apt update && sudo apt install -y python3-venv python3-pip || true
+    elif command -v dnf &> /dev/null; then
+        # Fedora/RHEL: try packages that provide virtualenv/venv functionality
+        sudo dnf install -y python3-virtualenv python3-pip python3-devel || sudo dnf install -y python3-virtualenv python3-pip || true
+    elif command -v yum &> /dev/null; then
+        sudo yum install -y python3-virtualenv python3-pip || true
+    elif command -v pacman &> /dev/null; then
+        sudo pacman -S --noconfirm python-virtualenv python-pip || true
+    else
+        echo "Could not detect package manager to install venv. Will try pip fallback."
+    fi
+
+    # Re-check for stdlib venv
+    if python3 -c "import venv" &> /dev/null; then
+        echo "✓ Python 'venv' module is now available"
+    else
+        echo "⚠ Python 'venv' still not available. Will try installing virtualenv via pip and use it to create environments."
+        # Ensure pip is available
+        if ! command -v pip3 &> /dev/null; then
+            if command -v python3 &> /dev/null; then
+                python3 -m ensurepip --upgrade || true
+            fi
+        fi
+
+        python3 -m pip install --user virtualenv || true
+        if python3 -c "import virtualenv" &> /dev/null; then
+            echo "✓ virtualenv installed via pip"
+            USE_VIRTUALENV=1
+        else
+            echo "Error: Could not enable venv or virtualenv. Please install 'python3-venv' (Debian/Ubuntu) or 'python3-virtualenv' (Fedora) and re-run this script."
+            exit 1
+        fi
+    fi
+else
+    echo "✓ Python 'venv' module available"
+fi
 
 # Get the current directory
 INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -57,14 +78,20 @@ if [ -d "$VENV_DIR" ]; then
     rm -rf "$VENV_DIR"
 fi
 
-python3 -m venv "$VENV_DIR"
-
-if [ $? -eq 0 ]; then
-    echo "✓ Virtual environment created at: $VENV_DIR"
+# Create the virtual environment. Prefer stdlib venv, otherwise virtualenv.
+if [ -z "$USE_VIRTUALENV" ]; then
+    python3 -m venv "$VENV_DIR" || {
+        echo "✗ Failed to create virtual environment with 'venv'."
+        exit 1
+    }
 else
-    echo "✗ Failed to create virtual environment"
-    exit 1
+    python3 -m virtualenv -p "$(command -v python3)" "$VENV_DIR" || {
+        echo "✗ Failed to create virtual environment with 'virtualenv'."
+        exit 1
+    }
 fi
+
+echo "✓ Virtual environment created at: $VENV_DIR"
 
 # Activate virtual environment and install dependencies
 echo ""
@@ -135,8 +162,10 @@ Terminal=false
 Type=Application
 Categories=System;PackageManager;
 EOF
-
+ 
 if [ $? -eq 0 ]; then
+    # Fix Exec line to remove embedded quotes which can break .desktop parsing
+    sed -i "s|Exec=\"$VENV_DIR/bin/python\" \"$INSTALL_DIR/main.py\"|Exec=$VENV_DIR/bin/python $INSTALL_DIR/main.py|" "$DESKTOP_FILE" 2>/dev/null || true
     chmod +x "$DESKTOP_FILE"
     echo "✓ Desktop entry created at: $DESKTOP_FILE"
 else
@@ -190,10 +219,7 @@ fi
 cd "$INSTALL_DIR"
 exec "$VENV_DIR/bin/python" "$INSTALL_DIR/main.py" "$@"
 EOF
-
-# Replace placeholder with actual installation directory
-sed -i "s|INSTALL_DIR=.*|INSTALL_DIR=\"$INSTALL_DIR\"|" "$LAUNCHER" 2>/dev/null || \
-    perl -i -pe "s|INSTALL_DIR=.*|INSTALL_DIR=\"$INSTALL_DIR\"|" "$LAUNCHER"
+ 
 
 chmod +x "$LAUNCHER"
 echo "✓ Created launcher script at: $LAUNCHER"
